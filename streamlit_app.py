@@ -166,7 +166,6 @@ if run_button:
                     f"[{df_filtered['K'].min():.2f}, {df_filtered['K'].max():.2f}] "
                     f"with maturities ≥ {MIN_MATURITY:.2f} years."
                 )
-                st.dataframe(df_filtered[["S0", "K", "T", "C_mkt", "iv"]], height=300)
                 fig = plot_surface(surface, spot)
                 st.plotly_chart(fig, use_container_width=True)
         except Exception as exc:  # noqa: BLE001
