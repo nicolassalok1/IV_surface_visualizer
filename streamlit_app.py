@@ -13,12 +13,12 @@ import plotly.graph_objects as go
 import streamlit as st
 import yfinance as yf
 
-MAX_LOOKAHEAD_YEARS = 10
+MAX_LOOKAHEAD_YEARS = 3
 
 st.set_page_config(page_title="Implied Volatility Surface", layout="wide")
 st.title("3D Implied Volatility Surface")
 st.write(
-    "Fetch monthly call option data via `yfinance`, filter strikes around the current spot, "
+    "Fetch call option data via `yfinance`, filter strikes around the current spot, "
     "and display an interpolated implied volatility surface."
 )
 
@@ -49,17 +49,15 @@ def _select_monthly_expirations(
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
-def download_option_data(symbol: str, max_expirations: int | None) -> pd.DataFrame:
+def download_option_data(symbol: str, years_ahead: float) -> pd.DataFrame:
     ticker = yf.Ticker(symbol)
     spot = fetch_spot(ticker)
     expirations = ticker.options
     if not expirations:
         raise RuntimeError(f"No option expirations found for {symbol}")
-    selected = _select_monthly_expirations(expirations, MAX_LOOKAHEAD_YEARS)
-    if max_expirations is not None:
-        selected = selected[:max_expirations]
+    selected = _select_monthly_expirations(expirations, years_ahead)
     if not selected:
-        raise RuntimeError("No expirations found within the next year.")
+        raise RuntimeError("No expirations found within the requested horizon.")
 
     rows: List[dict] = []
     now = dt.datetime.utcnow()
@@ -112,13 +110,7 @@ def prepare_surface(
 
 with st.sidebar:
     ticker_input = st.text_input("Ticker", value="SPY").strip().upper()
-    max_exp = st.slider(
-        f"Max expirations (months, up to {MAX_LOOKAHEAD_YEARS} years)",
-        min_value=1,
-        max_value=int(MAX_LOOKAHEAD_YEARS * 12),
-        value=12,
-        step=1,
-    )
+    st.caption(f"Expirations pulled up to {MAX_LOOKAHEAD_YEARS} years ahead.")
     strike_width = st.slider("Strike window around S₀", min_value=50, max_value=200, value=100, step=10)
     min_maturity = st.slider(
         "Minimum maturity (years)", min_value=0.01, max_value=1.0, value=0.1, step=0.01
@@ -151,7 +143,7 @@ def plot_surface(surface: pd.DataFrame, spot: float) -> go.Figure:
     fig.update_layout(
         title="Interpolated Implied Volatility Surface (S₀ ± window)",
         scene=dict(
-            xaxis=dict(title=dict(text="Strike K — spot price : " + spot.__format__(".2f")), range=[k_values.min(), k_values.max()]),
+            xaxis=dict(title=dict(text="Strike K — <span style='color:#ff0000'>S0</span>")),
             yaxis=dict(title="Time to Maturity T (years)", range=[t_min, t_max]),
             zaxis=dict(title="Implied Volatility"),
         ),
@@ -166,7 +158,7 @@ if run_button:
         st.warning("Enter a ticker to proceed.")
     else:
         try:
-            df_raw = download_option_data(ticker_input, max_exp)
+            df_raw = download_option_data(ticker_input, MAX_LOOKAHEAD_YEARS)
             st.success(f"Fetched {len(df_raw)} call rows for {ticker_input}.")
             try:
                 df_filtered, surface, spot = prepare_surface(df_raw, strike_width, min_maturity)
